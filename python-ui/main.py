@@ -1,3 +1,6 @@
+# imports
+import serial
+
 # constants
 
 PORTS = [
@@ -13,8 +16,25 @@ PORTS = [
 
 BAUDRATE = 115200
 
+# variables
+connections = []
+
 # bioreactor class
 class Bioreactor:
+
+    def __init__(self, reactor_id):
+
+        self.id = reactor_id
+
+        self.time = 0
+        self.temp = 0
+        self.od = 0
+        self.stir = 0
+        self.heat = 0
+        self.pump = 0
+        self.ph = 7
+
+        self.history = []
 
 # connect to serial ports
 def connect_serial():
