@@ -1,5 +1,7 @@
 # imports
 import serial
+from pathlib import Path
+import csv
 
 # constants
 
@@ -38,6 +40,9 @@ class Bioreactor:
 
 # connect to serial ports
 def connect_serial():
+    for port in PORTS:
+        ser = serial.Serial(port, 115200, timeout=1)
+        connections.append(ser)
 
 # read data from serial ports
 def serial_thread():
@@ -55,7 +60,29 @@ def update_graphs():
 def update_gui():
 
 # save data to CSV file
-def save_csv():
+def save_csv(temp, od, ph, volume, time):
+    csv_path = "python-ui/data.csv"
+    file_exists = csv_path.exists()
+
+    with open(csv_path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+
+        if not file_exists:
+            writer.writerow([
+                "temp",
+                "OD",
+                "pH",
+                "volume of liquid",
+                "time"
+            ])
+
+        writer.writerow([
+            temp,
+            od,
+            ph,
+            volume,
+            time
+        ])
 
 
 if __name__ == "__main__":
