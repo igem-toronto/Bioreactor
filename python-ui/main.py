@@ -20,6 +20,7 @@ BAUDRATE = 115200
 
 # variables
 connections = []
+reactors = []
 
 # bioreactor class
 class Bioreactor:
@@ -40,9 +41,14 @@ class Bioreactor:
 
 # connect to serial ports
 def connect_serial():
-    for port in PORTS:
-        ser = serial.Serial(port, 115200, timeout=1)
-        connections.append(ser)
+    for i, port in enumerate(PORTS):
+        try:
+            ser = serial.Serial(port, BAUDRATE, timeout=1)
+            connections.append(ser)
+            reactors.append(Bioreactor(i + 1))
+            print(f"Connected to {port}")
+        except serial.SerialException:
+            print(f"Could not connect to {port}")
 
 # read data from serial ports
 def serial_thread():
@@ -52,6 +58,7 @@ def parse_data(reactor_number, line):
 
 # send command to bioreactor via serial port
 def send_command():
+    
 
 # update graphs with new data w every refresh
 def update_graphs():
