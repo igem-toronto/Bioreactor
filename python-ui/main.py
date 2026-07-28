@@ -1,4 +1,6 @@
 # imports
+from time import time
+
 import serial
 from pathlib import Path
 import csv
@@ -52,7 +54,39 @@ def connect_serial():
 
 # read data from serial ports
 def serial_thread():
+    while True:
 
+        for ser, reactor in zip(connections, reactors):
+
+            if ser.in_waiting == 0:
+                continue
+
+            try:
+                line = ser.readline().decode("utf-8").strip()
+            
+                temp, od, ph, volume, timestamp = line.split(",")
+
+                reactor.temp = float(temp)
+                reactor.od = float(od)
+                reactor.ph = float(ph)
+                reactor.pump = float(volume) 
+                reactor.time = float(timestamp)
+
+                reactor.history.append({
+                    "temp": reactor.temp,
+                    "od": reactor.od,
+                    "ph": reactor.ph,
+                    "volume": reactor.pump,
+                    "time": reactor.time
+                })
+
+                save_csv(reactor)
+
+            except Exception as e:
+                print(f"Error reading reactor {reactor.id}: {e}")
+
+        time.sleep(0.05)
+        
 # parse data from serial port
 def parse_data(reactor_number, line):
 
