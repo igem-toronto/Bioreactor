@@ -1,9 +1,9 @@
 # imports
 from time import time
-
 import serial
 from pathlib import Path
 import csv
+import json
 
 # constants
 
@@ -55,32 +55,34 @@ def connect_serial():
 # read data from serial ports
 def serial_thread():
     while True:
-
         for ser, reactor in zip(connections, reactors):
 
             if ser.in_waiting == 0:
                 continue
 
             try:
-                line = ser.readline().decode("utf-8").strip()
-            
-                temp, od, ph, volume, timestamp = line.split(",")
+                line = ser.readline().decode("utf-8").strip() # one json msg
+                data = json.loads(line) # json to python
 
-                reactor.temp = float(temp)
-                reactor.od = float(od)
-                reactor.ph = float(ph)
-                reactor.pump = float(volume) 
-                reactor.time = float(timestamp)
+                reactor.temp = data.get("Temperature", reactor.temp)
+                reactor.od = data.get("OD", reactor.od)
+                reactor.ph = data.get("pH", reactor.ph)
+                reactor.volume = data.get("Volume of Liquid", reactor.volume)
+
+                reactor.time = time.time()
 
                 reactor.history.append({
+                    "time": reactor.time,
                     "temp": reactor.temp,
                     "od": reactor.od,
                     "ph": reactor.ph,
-                    "volume": reactor.pump,
-                    "time": reactor.time
+                    "volume": reactor.volume
                 })
 
                 save_csv(reactor)
+
+            except json.JSONDecodeError:
+                print(f"Invalid JSON received: {line}")
 
             except Exception as e:
                 print(f"Error reading reactor {reactor.id}: {e}")
