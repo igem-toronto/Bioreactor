@@ -154,6 +154,18 @@ def send_command(reactor_number,
 # update graphs with new data w every refresh
 def update_graphs():
 
+    for reactor in reactors:
+        if reactor.history:
+            latest = reactor.history[-1]
+
+            print(
+                f"R{reactor.id}: "
+                f"T={latest['temp']}°C "
+                f"OD={latest['od']} "
+                f"pH={latest['ph']} "
+                f"V={latest['volume']} mL"
+            )
+
 # update tkinter / other gui w every refresh
 def update_gui():
 
