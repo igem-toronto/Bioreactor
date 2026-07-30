@@ -177,8 +177,8 @@ def update_gui():
         )
 
 # save data to CSV file
-def save_csv(temp, od, ph, volume, time):
-    csv_path = "python-ui/data.csv"
+def save_csv(reactor):
+    csv_path = Path(f"python-ui/reactor_{reactor.id}.csv")
     file_exists = csv_path.exists()
 
     with open(csv_path, "a", newline="", encoding="utf-8") as f:
@@ -186,19 +186,19 @@ def save_csv(temp, od, ph, volume, time):
 
         if not file_exists:
             writer.writerow([
-                "temp",
+                "time",
+                "temperature",
                 "OD",
                 "pH",
-                "volume of liquid",
-                "time"
+                "volume"
             ])
 
         writer.writerow([
-            temp,
-            od,
-            ph,
-            volume,
-            time
+            reactor.time,
+            reactor.temp,
+            reactor.od,
+            reactor.ph,
+            reactor.volume
         ])
 
 
