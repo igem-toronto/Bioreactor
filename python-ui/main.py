@@ -1,5 +1,5 @@
 # imports
-from time import time
+from time import time, sleep
 import serial
 from pathlib import Path
 import csv
@@ -203,3 +203,51 @@ def save_csv(reactor):
 
 
 if __name__ == "__main__":
+
+    PORTS = ["COM3", "COM4"] # THIS IS FOR 2 ARDUINO NANOS, SOHAM PLS MODIFY THIS TO MORE COM PORTS IF UR TESTING W MORE!!!
+
+    print("Connecting to Arduinos...")
+    connect_serial()
+
+    if not connections:
+        print("No Arduinos connected.")
+        exit()
+
+    print(f"Connected to {len(connections)} Arduino(s).")
+
+    time.sleep(2)
+
+    for i in range(len(connections)):
+        send_command(
+            reactor_number=i,
+            temperature=37,
+            stirring_fan=50
+        )
+
+    print("Listening for data... (Ctrl+C to stop)")
+
+    try:
+        while True:
+
+            for i, ser in enumerate(connections): # check arduino for new data
+
+                if ser.in_waiting > 0:
+
+                    line = ser.readline().decode("utf-8").strip()
+
+                    print(f"Reactor {i+1}: {line}")
+
+                    parse_data(i, line)
+
+            update_gui() # latest reactor values printed
+
+            time.sleep(0.1)
+
+    except KeyboardInterrupt:
+        print("\nStopping...")
+
+    finally:
+        for ser in connections:
+            ser.close()
+
+        print("Serial ports closed.")
