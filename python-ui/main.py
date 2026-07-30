@@ -168,6 +168,13 @@ def update_graphs():
 
 # update tkinter / other gui w every refresh
 def update_gui():
+    for reactor in reactors:
+        print(
+            f"Reactor {reactor.id}: "
+            f"{reactor.temp:.2f}°C | "
+            f"OD={reactor.od:.3f} | "
+            f"pH={reactor.ph:.2f}"
+        )
 
 # save data to CSV file
 def save_csv(temp, od, ph, volume, time):
