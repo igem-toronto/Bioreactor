@@ -38,7 +38,8 @@ class Bioreactor:
         self.heat = 0
         self.pump = 0
         self.ph = 7
-
+        self.volume = 0
+        
         self.history = []
 
 # connect to serial ports
