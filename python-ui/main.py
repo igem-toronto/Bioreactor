@@ -116,16 +116,40 @@ def parse_data(reactor_number, line):
         print(f"Invalid JSON from Reactor {reactor.id}: {line}")
 
 # send command to bioreactor via serial port
-def send_command():
+def send_command(reactor_number,
+                 temperature=None,
+                 input_pump1=None,
+                 input_pump2=None,
+                 output_pump1=None,
+                 stirring_fan=None):
 
-# FORMAT:
-# {
-# “Temperature”: 50 (target Celsius),
-# “Input Pump 1”: 1, 10 (volume (mL), time),
-# “Input Pump 2”: 5, 20 (volume (mL), time),
-# “Output Pump 1”: 2, 5 (volume (mL), time),
-# “Stirring Fan”: 23 (target speed from 1 to 100)
-# }
+    if reactor_number >= len(connections):
+        print("Invalid reactor number.")
+        return
+
+    command = {}
+
+    if temperature is not None:
+        command["Temperature"] = temperature
+
+    if input_pump1 is not None:
+        command["Input Pump 1"] = input_pump1
+
+    if input_pump2 is not None:
+        command["Input Pump 2"] = input_pump2
+
+    if output_pump1 is not None:
+        command["Output Pump 1"] = output_pump1
+
+    if stirring_fan is not None:
+        command["Stirring Fan"] = stirring_fan
+
+    try:
+        msg = json.dumps(command) + "\n"
+        connections[reactor_number].write(msg.encode("utf-8"))
+
+    except Exception as e:
+        print(f"Failed to send command: {e}")
 
 # update graphs with new data w every refresh
 def update_graphs():
