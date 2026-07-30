@@ -91,10 +91,41 @@ def serial_thread():
         
 # parse data from serial port
 def parse_data(reactor_number, line):
+    reactor = reactors[reactor_number]
+
+    try:
+        data = json.loads(line)
+
+        reactor.temp = data.get("Temperature", reactor.temp)
+        reactor.od = data.get("OD", reactor.od)
+        reactor.ph = data.get("pH", reactor.ph)
+        reactor.volume = data.get("Volume of Liquid", reactor.volume)
+        reactor.time = time()
+
+        reactor.history.append({
+            "time": reactor.time,
+            "temp": reactor.temp,
+            "od": reactor.od,
+            "ph": reactor.ph,
+            "volume": reactor.volume
+        })
+
+        save_csv(reactor)
+
+    except json.JSONDecodeError:
+        print(f"Invalid JSON from Reactor {reactor.id}: {line}")
 
 # send command to bioreactor via serial port
 def send_command():
-    
+
+# FORMAT:
+# {
+# “Temperature”: 50 (target Celsius),
+# “Input Pump 1”: 1, 10 (volume (mL), time),
+# “Input Pump 2”: 5, 20 (volume (mL), time),
+# “Output Pump 1”: 2, 5 (volume (mL), time),
+# “Stirring Fan”: 23 (target speed from 1 to 100)
+# }
 
 # update graphs with new data w every refresh
 def update_graphs():
