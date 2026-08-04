@@ -1,0 +1,199 @@
+#include <PID_v1.h>
+#include <DS18B20.h>
+
+//Pin assignments
+#define FAN_TACH 2 
+#define FAN_PWM 4
+#define PUMP 3
+#define TEMP_SENSOR 12
+#define HEATER 5
+// The heater pin is incorrect but this is just to prevent the heater from actually turning on
+
+unsigned long printCycleStart;
+unsigned long runStart;
+
+class Fan {
+  private:
+    static Fan *instance;
+    int tach_pin;
+    int pwm_pin;
+    unsigned long lastCalcTime;
+    int prevSpeedPercent = 0;
+    static void tachISR() {
+      if (instance) instance->pulseCount++;
+    }
+  public:
+    unsigned long currentRPM = 0;
+    volatile unsigned long pulseCount = 0;
+    int speedPercent = 0;
+    Fan(int tach, int pwm) : tach_pin(tach), pwm_pin(pwm) {
+      pinMode(tach_pin, INPUT_PULLUP);
+      pinMode(pwm_pin, OUTPUT);
+      instance = this;
+      attachInterrupt(digitalPinToInterrupt(tach_pin), tachISR, FALLING);
+      lastCalcTime = millis();
+    }
+    void setSpeed(int percent) {
+      percent = constrain(percent, 0, 100);
+      speedPercent = percent;
+      int pwmValue = map(percent, 0, 100, 0, 255);
+      analogWrite(pwm_pin, pwmValue);
+    }
+    void update() {
+      //Serial.println(this->pulseCount);
+      unsigned long currentTime = millis();
+      if (currentTime - lastCalcTime >= 1000) {
+        noInterrupts();
+        unsigned long pulses = pulseCount;
+        pulseCount = 0;
+        interrupts();
+        currentRPM = 60000 * pulses / 2 / (currentTime - lastCalcTime);
+        lastCalcTime = currentTime;
+      }
+      if (speedPercent != prevSpeedPercent) {
+        setSpeed(speedPercent);
+        prevSpeedPercent = speedPercent;
+      }
+    }
+};
+Fan* Fan::instance = nullptr;
+
+// Pump stuff
+class Pump {
+  private:
+    int pin;
+    unsigned long moveStart;
+  public:
+    bool active = false;
+    unsigned long moveDuration = 0;
+    int speedPercent = 0;
+    Pump(int p) : pin(p) { pinMode(pin, OUTPUT); }
+    void setSpeed(int pwmValue) { analogWrite(pin, constrain(pwmValue, 0, 255)); }
+    void setSpeedPercent(int percent) { setSpeed(map(constrain(percent, 0, 100), 0, 100, 0, 255)); }
+    void stop() { analogWrite(pin, 0); }
+    void update() {
+      if (!active && moveDuration) {
+        active = true;
+        moveStart = millis();
+        setSpeedPercent(speedPercent);
+      }
+      if (active && millis() - moveStart > moveDuration) {
+        setSpeedPercent(0);
+        moveDuration = 0;
+        active = false;
+        stop();
+      }
+    }
+};
+
+class Temperature {
+  private:
+    int probe_pin, heater_pin;
+    float Kp = 5000;
+    float Ki = 1000;
+    float Kd = 0;
+    int windowSize = 5000;
+    unsigned long windowStartTime;
+    DS18B20 ds;
+    PID tempPID;
+  public:
+    double currentTemp, targetTemp;
+    bool on = false;
+    double heaterCommand = 0;
+    Temperature(int probe, int heater) : heater_pin(heater), ds(probe), tempPID(&currentTemp, &heaterCommand, &targetTemp, Kp, Ki, Kd, DIRECT) {
+      pinMode(heater_pin, OUTPUT);
+      windowStartTime = millis();
+      tempPID.SetOutputLimits(0, windowSize);
+      tempPID.SetMode(AUTOMATIC);
+    }
+    void update() {
+      currentTemp = (double)ds.getTempC();
+      tempPID.Compute();
+      if (heaterCommand < 200) heaterCommand = 0;
+      unsigned long now = millis();
+      if (now - windowStartTime > windowSize) {
+        windowStartTime = millis();
+      }
+      if (heaterCommand > now - windowStartTime) {
+        digitalWrite(heater_pin, HIGH);
+        on = true;
+      } else {
+        digitalWrite(heater_pin, LOW);
+        on = false;
+      }
+    }
+};
+
+Fan myFan(FAN_TACH, FAN_PWM);
+Pump myPump(PUMP);
+Temperature myTemp(TEMP_SENSOR, HEATER);
+
+void setup() {
+  Serial.begin(9600);
+  printCycleStart = millis();
+  Serial.println("Run starts");
+  runStart = millis();
+}
+
+void loop() {
+  HandleSerial();
+  myFan.update();
+  myPump.update();
+  myTemp.update();
+  unsigned long now = millis();
+  if (millis() - printCycleStart > 1000) {
+    int minutes = (now - runStart) / 60000;
+    int seconds = ((now - runStart) % 60000) / 1000;
+    Serial.print(minutes);
+    Serial.print(':');
+    Serial.println(seconds);
+    PrintStats();
+    printCycleStart = millis();
+  }
+}
+
+void HandleSerial() {
+  if (!Serial.available()) {
+    return;
+  }
+  String cmd = Serial.readStringUntil('\n');
+  cmd.trim();
+  if (cmd.startsWith("F ") || cmd.startsWith("f ")) {
+    myFan.speedPercent = cmd.substring(2).toInt();
+  }
+  if (cmd.startsWith("P ") || cmd.startsWith("p ")) {
+    int spaceIndex = cmd.indexOf(' ', 2);
+    if (spaceIndex != -1 && !myPump.active) {
+      myPump.moveDuration = cmd.substring(2, spaceIndex).toInt() * 1000;
+      myPump.speedPercent = cmd.substring(spaceIndex + 1).toInt();
+    }
+  }
+  if (cmd.startsWith("T ") || cmd.startsWith("t ")) {
+    myTemp.targetTemp = cmd.substring(2).toDouble();
+  }
+}
+
+void PrintStats() {
+  Serial.print("Fan: PWM ");
+  Serial.print(myFan.speedPercent);
+  Serial.print("% RPM ");
+  Serial.println(myFan.currentRPM);
+  Serial.print("Pump: Active ");
+  Serial.print(myPump.active);
+  Serial.print(" Speed ");
+  Serial.print(myPump.speedPercent);
+  Serial.print("% Duration ");
+  Serial.println(myPump.moveDuration / 1000);
+  Serial.print("Temp: Current ");
+  Serial.print(myTemp.currentTemp);
+  Serial.print(" Target ");
+  Serial.print(myTemp.targetTemp);
+  Serial.print(" On ");
+  Serial.print(myTemp.on);
+  Serial.print(" Command ");
+  Serial.println(myTemp.heaterCommand);
+  Serial.println(" ");
+}
+
+
+
