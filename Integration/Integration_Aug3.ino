@@ -124,22 +124,138 @@ class Temperature {
     }
 };
 
+class OD {
+  private: 
+  SoftWire REF(OD_SDA, OD_SCL);
+  AS7343Soft sensor2(REF); //sensor2 is reference sensor
+  Adafruit_AS7343 sensor1; //sensor1 is collecting
+  uint8_t rxBuffer[32];
+  uint8_t txBuffer[32];
+
+    double blankOD;
+    double referenceOD;
+    uint16_t darkValue1; // LED off
+    uint16_t darkValue2; // LED off
+    double nOD;
+
+  uint16_t run_sensor1() {
+    //Manually command fresh reading cycle
+    sensor1.startMeasurement();
+    while (!sensor1.dataReady()) {
+      delay(1);
+    }
+    //for violet light, 405nm
+    int FXL_value = sensor1.readChannel(AS7343_CHANNEL_FXL);
+    return FXL_value;
+  }
+
+
+  uint16_t run_sensor2() {
+    //!!!!!!THIS IS A SAFETY MEASURE
+    if (!sensor2.startMeasurement()) {
+      Serial.println("startMeasurement failed");
+      delay(100000);
+    }
+    while (!sensor2.dataReady()) {
+      delay(1);
+  }
+
+  uint16_t fxlValue;
+  //!!!!!!!if else is safety measure
+    if (sensor2.readLightFY(fxlValue))  return fxlValue;
+    else  Serial.println("Could not read FXL");
+
+  
+  public: 
+  OD() {//!!!!!!!I assume we configure when calling the object
+    //give memory to softwire, sensor2 configure
+    REF.setRxBuffer(rxBuffer, 32);
+    REF.setTxBuffer(txBuffer, 32);
+    REF.setClock(50000);        //slower = more stable, I2C standard is 100kHz
+    REF.setTimeout_ms(100);     //if SoftWire is slower than I2C for more than 100mili, give up instead of freezing forever
+    REF.begin();
+
+    //!!!!!!!!!!THIS IS A SAFETY CAUTION
+    if (!sensor2.begin()) {
+      Serial.println("Could not find AS7343 sensor2!");
+      Serial.flush();
+      while(1);
+      exit(0);
+    }
+
+    if (!sensor1.begin()) {
+      Serial.println("Could not find AS7343 sensor1!");
+      Serial.flush();
+      while(1);
+      exit(0);
+    } 
+    //sensor1 configure
+    sensor1.setGain(AS7343_GAIN_64X);
+    sensor1.setATIME(29);  // Integration cycles
+    sensor1.setASTEP(599); // Step size
+
+    //!!!!!!!!!!THIS IS A SAFETY CAUTION
+    uint16_t readings[18];
+    //need to read all channels to first trigger the global reading, pulls data from memory bank after read starts
+    if(!sensor1.readAllChannels(readings)) {
+      Serial.println("Read failed!");
+      delay(500);
+      exit(0);
+    } 
+  }
+
+  void dark() {
+    Serial.println("Now running value for dark");
+    darkValue1 = run_sensor1();
+    darkValue2 = run_sensor2();
+  }
+
+  void blank() {
+    Serial.println("Now running for blank vial values");
+    blankOD = ((double)run_sensor1() - darkValue1) / ((double)run_sensor2 - darkValue2);
+  }
+
+  void reference() {
+    Serial.println("Now running for initial values");
+    uint16_t total_sensor1 = 0;
+    uint16_t total_sensor2 = 0;
+
+    //take the mean of 10 values at the start
+    for(uint8_t i = 0; i < 10; i++) {
+      total_sensor1 += run_sensor1();
+      total_sensor2 += run_sensor2();
+    }
+
+    referenceOD = ((total_sensor1/10.0) - darkValue1) / ((total_sensor2/10.0) - darkValue2);
+  }
+
+  void read() {
+    nOD = (((double)run_sensor1() - darkValue1) / (run_sensor2() - darkValue2) - blankOD) / (referenceOD - blankOD);
+  }
+};
+
 Fan myFan(FAN_TACH, FAN_PWM);
 Pump myPump(PUMP);
 Temperature myTemp(TEMP_SENSOR, HEATER);
+OD myOD();
+
 
 void setup() {
   Serial.begin(9600);
   printCycleStart = millis();
   Serial.println("Run starts");
   runStart = millis();
+  //myOD.dark;
+  //myOD.blank;
+  //myOD.reference; //will need buttons to run this, or delays idk
 }
 
 void loop() {
   HandleSerial();
   myFan.update();
   myPump.update();
-  myTemp.update();
+  myOD.read();
+  //myTemp.update();
   unsigned long now = millis();
   if (millis() - printCycleStart > 1000) {
     int minutes = (now - runStart) / 60000;
@@ -187,13 +303,10 @@ void PrintStats() {
   Serial.print("Temp: Current ");
   Serial.print(myTemp.currentTemp);
   Serial.print(" Target ");
-  Serial.print(myTemp.targetTemp);
-  Serial.print(" On ");
-  Serial.print(myTemp.on);
-  Serial.print(" Command ");
-  Serial.println(myTemp.heaterCommand);
+  Serial.println(myTemp.targetTemp);
+  Serial.println(" ");
+  
+  Serial.print("OD:  ");
+  Serial.print(myOD.nOD);
   Serial.println(" ");
 }
-
-
-
