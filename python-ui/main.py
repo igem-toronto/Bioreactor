@@ -1,5 +1,5 @@
 # imports
-from time import time, sleep
+import time
 import serial
 from pathlib import Path
 import csv
