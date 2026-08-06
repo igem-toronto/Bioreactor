@@ -7,16 +7,20 @@
 //self written ^
 
 //Pin assignments
-#define FAN_TACH 2 
-#define FAN_PWM 9
-#define PUMP 3
-#define TEMP_SENSOR 4
-#define HEATER 5
+const int FAN_TACH = 2;
+const int FAN_PWM = 9;
+const int PUMP = 3;
+const int TEMP_SENSOR = 12;
+const int HEATER = 5;
+const int OD_SDA = 17;
+const int OD_SCL = 15;
 
-unsigned long printCycleStart;
-unsigned long runStart;
 uint8_t rxBuffer[32];
 uint8_t txBuffer[32];
+unsigned long printCycleStart;
+unsigned long runStart;
+  SoftWire REF(17, 15);
+  AS7343Soft sensor2(REF); //sensor2 is reference sensor
 
 class Fan {
   private:
@@ -132,49 +136,51 @@ class Temperature {
 
 class OD {
   private: 
-  SoftWire REF(OD_SDA, OD_SCL);
-  AS7343Soft sensor2(REF); //sensor2 is reference sensor
-  Adafruit_AS7343 sensor1; //sensor1 is collecting
-  uint8_t rxBuffer[32];
-  uint8_t txBuffer[32];
+    Adafruit_AS7343 sensor1; //sensor1 is collecting
+    uint8_t rxBuffer[32];
+    uint8_t txBuffer[32];
 
     double blankOD;
     double referenceOD;
     uint16_t darkValue1; // LED off
     uint16_t darkValue2; // LED off
-    double nOD;
 
-  uint16_t run_sensor1() {
+    uint16_t run_sensor1() {
     //Manually command fresh reading cycle
-    sensor1.startMeasurement();
-    while (!sensor1.dataReady()) {
-      delay(1);
+      sensor1.startMeasurement();
+      while (!sensor1.dataReady()) {
+        delay(1);
+      }
+      //for violet light, 405nm
+      int FXL_value = sensor1.readChannel(AS7343_CHANNEL_FXL);
+      return FXL_value;
     }
-    //for violet light, 405nm
-    int FXL_value = sensor1.readChannel(AS7343_CHANNEL_FXL);
-    return FXL_value;
-  }
 
 
-  uint16_t run_sensor2() {
-    //!!!!!!THIS IS A SAFETY MEASURE
-    if (!sensor2.startMeasurement()) {
-      Serial.println("startMeasurement failed");
-      delay(100000);
+    uint16_t run_sensor2() {
+      //!!!!!!THIS IS A SAFETY MEASURE
+      if (!sensor2.startMeasurement()) {
+        Serial.println("startMeasurement failed");
+        delay(100000);
+      }
+      while (!sensor2.dataReady()) {
+        delay(1);
+      }
+
+    uint16_t fxlValue;
+    //!!!!!!!if else is safety measure
+      if (sensor2.readLightFXL(fxlValue))  return fxlValue;
+      else  Serial.println("Could not read FXL");
     }
-    while (!sensor2.dataReady()) {
-      delay(1);
-  }
-
-  uint16_t fxlValue;
-  //!!!!!!!if else is safety measure
-    if (sensor2.readLightFY(fxlValue))  return fxlValue;
-    else  Serial.println("Could not read FXL");
-
   
   public: 
-  OD() {//!!!!!!!I assume we configure when calling the object
+    double nOD;
+  OD()  {//!!!!!!!I assume we configure when calling the object
     //give memory to softwire, sensor2 configure
+    
+  }
+
+  void init() {
     REF.setRxBuffer(rxBuffer, 32);
     REF.setTxBuffer(txBuffer, 32);
     REF.setClock(50000);        //slower = more stable, I2C standard is 100kHz
@@ -218,7 +224,7 @@ class OD {
 
   void blank() {
     Serial.println("Now running for blank vial values");
-    blankOD = ((double)run_sensor1() - darkValue1) / ((double)run_sensor2 - darkValue2);
+    blankOD = ((double)run_sensor1() - darkValue1) / ((double)run_sensor2() - darkValue2);
   }
 
   void reference() {
@@ -239,21 +245,21 @@ class OD {
     nOD = (((double)run_sensor1() - darkValue1) / (run_sensor2() - darkValue2) - blankOD) / (referenceOD - blankOD);
   }
 };
-
 Fan myFan(FAN_TACH, FAN_PWM);
 Pump myPump(PUMP);
 Temperature myTemp(TEMP_SENSOR, HEATER);
-OD myOD();
-
+OD myOD;
 
 void setup() {
   Serial.begin(9600);
+  delay(1000);
   printCycleStart = millis();
   Serial.println("Run starts");
   runStart = millis();
-  //myOD.dark;
-  //myOD.blank;
-  //myOD.reference; //will need buttons to run this, or delays idk
+  myOD.init();
+  myOD.dark();
+  myOD.blank();
+  myOD.reference(); //will need buttons to run this, or delays idk
 }
 
 void loop() {
@@ -261,7 +267,7 @@ void loop() {
   myFan.update();
   myPump.update();
   myOD.read();
-  //myTemp.update();
+  myTemp.update();
   unsigned long now = millis();
   if (millis() - printCycleStart > 1000) {
     int minutes = (now - runStart) / 60000;
@@ -296,23 +302,21 @@ void HandleSerial() {
 }
 
 void PrintStats() {
-  Serial.print("Fan: PWM ");
+  Serial.print("{\"Fan PWM\":");
   Serial.print(myFan.speedPercent);
-  Serial.print("% RPM ");
-  Serial.println(myFan.currentRPM);
-  Serial.print("Pump: Active ");
-  Serial.print(myPump.active);
-  Serial.print(" Speed ");
+  Serial.print(",\"Fan RPM\":");
+  Serial.print(myFan.currentRPM);
+  Serial.print(",\"Pump Active\":");
+  Serial.print(myPump.active ? "true" : "false");
+  Serial.print(",\"Pump Speed\":");
   Serial.print(myPump.speedPercent);
-  Serial.print("% Duration ");
-  Serial.println(myPump.moveDuration / 1000);
-  Serial.print("Temp: Current ");
-  Serial.print(myTemp.currentTemp);
-  Serial.print(" Target ");
-  Serial.println(myTemp.targetTemp);
-  Serial.println(" ");
-  
-  Serial.print("OD:  ");
-  Serial.print(myOD.nOD);
-  Serial.println(" ");
-}
+  Serial.print(",\"Pump Duration\":");
+  Serial.print(myPump.moveDuration / 1000);
+  Serial.print(",\"Temperature\":");
+  Serial.print(myTemp.currentTemp, 2);
+  Serial.print(",\"Temperature Target\":");
+  Serial.print(myTemp.targetTemp, 2);
+  Serial.print(",\"OD\":");
+  Serial.print(myOD.nOD, 4);
+  Serial.println("}");
+} 
