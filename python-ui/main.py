@@ -30,16 +30,17 @@ class Bioreactor:
     def __init__(self, reactor_id):
 
         self.id = reactor_id
-
         self.time = 0
+        self.fan_pwm = 0
+        self.fan_rpm = 0
+        self.pump_active = False
+        self.pump_speed = 0
+        self.pump_duration = 0
         self.temp = 0
+        self.temp_target = 0
         self.od = 0
-        self.stir = 0
-        self.heat = 0
-        self.pump = 0
-        self.ph = 7
-        self.volume = 0
-        
+        #self.ph = 0
+        #self.volume = 0
         self.history = []
 
 # connect to serial ports
@@ -65,10 +66,16 @@ def serial_thread():
                 line = ser.readline().decode("utf-8").strip() # one json msg
                 data = json.loads(line) # json to python
 
+                reactor.fan_pwm = data.get("Fan PWM", reactor.fan_pwm)
+                reactor.fan_rpm = data.get("Fan RPM", reactor.fan_rpm)
+                reactor.pump_active = data.get("Pump Active", reactor.pump_active)
+                reactor.pump_speed = data.get("Pump Speed", reactor.pump_speed)
+                reactor.pump_duration = data.get("Pump Duration", reactor.pump_duration)
                 reactor.temp = data.get("Temperature", reactor.temp)
+                reactor.temp_target = data.get("Temperature Target", reactor.temp_target)
                 reactor.od = data.get("OD", reactor.od)
-                reactor.ph = data.get("pH", reactor.ph)
-                reactor.volume = data.get("Volume of Liquid", reactor.volume)
+                #reactor.ph = data.get("pH", reactor.ph)
+                #reactor.volume = data.get("Volume of Liquid", reactor.volume)
 
                 reactor.time = time.time()
 
@@ -76,8 +83,8 @@ def serial_thread():
                     "time": reactor.time,
                     "temp": reactor.temp,
                     "od": reactor.od,
-                    "ph": reactor.ph,
-                    "volume": reactor.volume
+                    #"ph": reactor.ph, # no pH sensor yet 
+                    #"volume": reactor.volume # need to write code for volume measurements + addition in arduino before we can add it to the history 
                 })
 
                 save_csv(reactor)
@@ -97,18 +104,24 @@ def parse_data(reactor_number, line):
     try:
         data = json.loads(line)
 
+        reactor.fan_pwm = data.get("Fan PWM", reactor.fan_pwm)
+        reactor.fan_rpm = data.get("Fan RPM", reactor.fan_rpm)
+        reactor.pump_active = data.get("Pump Active", reactor.pump_active)
+        reactor.pump_speed = data.get("Pump Speed", reactor.pump_speed)
+        reactor.pump_duration = data.get("Pump Duration", reactor.pump_duration)
         reactor.temp = data.get("Temperature", reactor.temp)
+        reactor.temp_target = data.get("Temperature Target", reactor.temp_target)
         reactor.od = data.get("OD", reactor.od)
-        reactor.ph = data.get("pH", reactor.ph)
-        reactor.volume = data.get("Volume of Liquid", reactor.volume)
+        #reactor.ph = data.get("pH", reactor.ph)
+        #reactor.volume = data.get("Volume of Liquid", reactor.volume)
         reactor.time = time()
 
         reactor.history.append({
             "time": reactor.time,
             "temp": reactor.temp,
             "od": reactor.od,
-            "ph": reactor.ph,
-            "volume": reactor.volume
+            #"ph": reactor.ph,
+            #"volume": reactor.volume
         })
 
         save_csv(reactor)
@@ -190,16 +203,16 @@ def save_csv(reactor):
                 "time",
                 "temperature",
                 "OD",
-                "pH",
-                "volume"
+                #"pH",
+                #"volume"
             ])
 
         writer.writerow([
             reactor.time,
             reactor.temp,
             reactor.od,
-            reactor.ph,
-            reactor.volume
+            #reactor.ph,
+            #reactor.volume
         ])
 
 
