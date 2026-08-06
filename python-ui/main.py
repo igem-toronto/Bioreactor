@@ -176,8 +176,8 @@ def update_graphs():
                 f"R{reactor.id}: "
                 f"T={latest['temp']}°C "
                 f"OD={latest['od']} "
-                f"pH={latest['ph']} "
-                f"V={latest['volume']} mL"
+                #f"pH={latest['ph']} "
+                #f"V={latest['volume']} mL"
             )
 
 # update tkinter / other gui w every refresh
@@ -187,7 +187,7 @@ def update_gui():
             f"Reactor {reactor.id}: "
             f"{reactor.temp:.2f}°C | "
             f"OD={reactor.od:.3f} | "
-            f"pH={reactor.ph:.2f}"
+            #f"pH={reactor.ph:.2f}"
         )
 
 # save data to CSV file
@@ -218,7 +218,7 @@ def save_csv(reactor):
 
 if __name__ == "__main__":
 
-    PORTS = ["COM3", "COM4"] # THIS IS FOR 2 ARDUINO NANOS, SOHAM PLS MODIFY THIS TO MORE COM PORTS IF UR TESTING W MORE!!!
+    PORTS = ["COM8", "COM11"] # port numbers for the arduino serial connections
 
     print("Connecting to Arduinos...")
     connect_serial()
@@ -265,3 +265,4 @@ if __name__ == "__main__":
             ser.close()
 
         print("Serial ports closed.")
+
