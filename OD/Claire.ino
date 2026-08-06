@@ -32,6 +32,10 @@ void setup() {
   REF.setTimeout_ms(100);     //if SoftWire is slower than I2C for more than 100mili, give up instead of freezing forever
   REF.begin();
 
+  if (!sensor1.begin()) {
+    Serial.println("Could not find AS7343 sensor1!");
+    exit(0);
+  } 
   if (!sensor2.begin()) {
     //bool begin(uint8_t i2c_addr = 0x39, TwoWire *wire = &Wire);, thus, NEED a twowire (hardware based), need to override
     //begin will also configure sensor2
@@ -40,10 +44,6 @@ void setup() {
     while(1);
   }
 
-  if (!sensor1.begin()) {
-    Serial.println("Could not find AS7343 sensor1!");
-    exit(0);
-  } 
 
   sensor1.setGain(AS7343_GAIN_64X);
   sensor1.setATIME(29);  // Integration cycles
@@ -63,7 +63,7 @@ void setup() {
   //accounts for media factors
   blank_od();
   //initial point reference
-  reference_od():
+  reference_od();
 
   Serial.println("Now collecting data");
   } 
@@ -77,10 +77,10 @@ void dark_od() {
 
 void blank_od() {
   Serial.println("Now running for blank vial values");
-  blankOD = ((double)run_sensor1() - darkValue1) / ((double)run_sensor2 - darkValue2);
+  blankOD = ((double)run_sensor1() - darkValue1) / ((double)run_sensor2() - darkValue2);
 }
 
-void blank_od() {
+void reference_od() {
   Serial.println("Now running for initial values");
   uint16_t total_sensor1 = 0;
   uint16_t total_sensor2 = 0;
@@ -97,7 +97,7 @@ void blank_od() {
 
 
 void loop() {
-  double nOD = (((double)run_sensor1() - darkValue1) / (run_sensor2() - darkValue2) - blankOD) / (referenceOD - blankOD);
+  double nOD = (((double)run_sensor1() - darkValue1) / ((double)run_sensor2() - darkValue2) - blankOD) / (referenceOD - blankOD);
   Serial.print("Normalized OD value:  ");
   Serial.println(nOD, 10); //small value
   Serial.println("Rerun\n");
@@ -137,7 +137,7 @@ uint16_t run_sensor2() {
 
   uint16_t fxlValue;
 
-  if (sensor2.readLightFY(fxlValue)) {
+  if (sensor2.readLightFXL(fxlValue)) {
   Serial.print("FXL2:   ");
   Serial.println(fxlValue);
   return fxlValue;
