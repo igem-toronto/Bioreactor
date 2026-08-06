@@ -1,16 +1,22 @@
 #include <PID_v1.h>
 #include <DS18B20.h>
+#include <Adafruit_AS7343.h>
+#include <SoftWire.h>
+#include <Wire.h>
+#include "AS7343Soft.h"
+//self written ^
 
 //Pin assignments
 #define FAN_TACH 2 
-#define FAN_PWM 4
+#define FAN_PWM 9
 #define PUMP 3
-#define TEMP_SENSOR 12
+#define TEMP_SENSOR 4
 #define HEATER 5
-// The heater pin is incorrect but this is just to prevent the heater from actually turning on
 
 unsigned long printCycleStart;
 unsigned long runStart;
+uint8_t rxBuffer[32];
+uint8_t txBuffer[32];
 
 class Fan {
   private:
