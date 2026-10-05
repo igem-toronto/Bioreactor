@@ -107,19 +107,25 @@ class Temperature {
     float Kp = 800;
     float Ki = 50;
     float integral = 0;
-    float minOutput = 3000;
+    float minOutput = 3500;
     unsigned long prevPIDCalc, windowStartTime;
     int windowSize = 5000;
     bool KiMultiplied = false;
     bool recovered = false;
     DS18B20 ds;
   public:
-    double currentTemp, targetTemp;
+    double currentTemp;
+    double targetTemp = 20;
     bool on = false;
     double heaterCommand = 0;
     Temperature(int probe, int heater) : heater_pin(heater), ds(probe) {
       pinMode(heater_pin, OUTPUT);
+    }
+    void init() {
+      currentTemp = (double)ds.getTempC();
+      prevTemp = currentTemp;
       windowStartTime = millis();
+      prevPIDCalc = millis();
     }
     void update() {
       if (prevTarget != targetTemp) {
@@ -137,8 +143,8 @@ class Temperature {
       if (now - windowStartTime > windowSize) {
         windowStartTime = millis();
       }
-      if (heaterCommand > now - windowStartTime) digitalWrite(HEATER, HIGH);
-      else digitalWrite(HEATER, LOW);
+      if (heaterCommand > now - windowStartTime) digitalWrite(heater_pin, HIGH);
+      else digitalWrite(heater_pin, LOW);
     }
     float ComputePID() {
       float output = 0;
@@ -319,6 +325,7 @@ void setup() {
   myOD.dark();
   myOD.blank();
   myOD.reference(); //will need buttons to run this, or delays idk
+  myTemp.init();
 }
 
 void loop() {
