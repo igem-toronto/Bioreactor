@@ -1,3 +1,9 @@
+/* #s
+Serial Commands (lowercase or uppercase are both fine)
+T [target]: sets target temperature (deg C); example: "t 37" sets target to 37 C
+P [power%] [duration]: runs the pump at [%] power for [duration] seconds; example: "P 80 3" runs pump at 80% for 3s
+F [power%]: runs the fan at [%]. RPM is reported separately; example: "f 20" runs fan at 20% power
+*/
 #include <PID_v1.h>
 #include <DS18B20.h>
 #include <Adafruit_AS7343.h>
