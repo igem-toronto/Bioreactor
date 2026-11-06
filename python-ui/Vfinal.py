@@ -51,8 +51,12 @@ class Bioreactor:
         self.temp_target = 0
         self.od = 0
         self.od_raw = None   
-        self.blank_set = False 
-        self.blank_count = 0 
+        self.dark_set = False
+        self.dark_count = 0
+        self.blank_set = False
+        self.blank_count = 0
+        self.reference_set = False
+        self.reference_count = 0
 
         self.ph = 0
         self.ph_control = {
@@ -95,7 +99,7 @@ class Bioreactor:
         self.ph_inputs = {"pump1_ph": "7.0", "pump2_ph": "7.0",
                           "initial_ph": "7.0", "initial_volume": "1000"}
         self.od_normalized = False
-        self.calibration = {"blank": False, "vial": False, "reference": False}
+        self.calibration = {"dark": False, "blank": False, "reference": False}
         self.spectro_points = []
 
 # connecting to COM ports
@@ -215,7 +219,13 @@ def parse_data(reactor_number, line):
 
         if data.get("OD Raw") is not None:
             reactor.od_raw = float(data["OD Raw"])
+            
+        if "Dark Set" in data:
+            reactor.dark_set = bool(data["Dark Set"])
 
+        if "Dark Count" in data:
+            reactor.dark_count = int(data["Dark Count"])
+        
         if "Blank Set" in data:
             reactor.blank_set = bool(data["Blank Set"])
 
@@ -569,7 +579,7 @@ def create_dashboard(root):
 
     temperature_commands = {}
 
-    def calibration_warning(parent):
+   def calibration_warning(parent):
         answer = tkinter.messagebox.askyesno(
             "OD Calibration Required",
             "OD calibration is not complete.\n\nGo to the calibration tab now?",
@@ -599,47 +609,142 @@ def create_dashboard(root):
                 text=f"OD Calibration: {completed}/3 complete",
                 foreground=colors["orange"]
             )
+    #added
+    # each calibration step matches one function in the Arduino OD class
+    #   key        Arduino command   count field          reactor attr
+    CAL_STEPS = {
+        "dark":      {"command": "Dark",      "count": "dark_count",      "set": "dark_set"},
+        "blank":     {"command": "Blank",     "count": "blank_count",     "set": "blank_set"},
+        "reference": {"command": "Reference", "count": "reference_count", "set": "reference_set"},
+    }
 
-    def collect_vial_od():
-        steps = current_calibration()
-        if steps is None:
-            return
-        print("Collecting OD with empty vial")
-        steps["vial"] = True
-        vial_od_button.config(state="disabled", text="✓ Vial OD collected")
-        update_calibration_status()
+    CAL_TEXT = {
+        "dark": {
+            "idle": "1. DARK - LED off, holder closed (press to collect)",
+            "busy": "Collecting dark reading...",
+            "done": "✓ Dark collected - press again to redo",
+        },
+        "blank": {
+            "idle": "2. BLANK - vial with plain media only (press to collect)",
+            "busy": "Collecting blank... keep the vial still",
+            "done": "✓ Blank collected - press again to redo",
+        },
+        "reference": {
+            "idle": "3. REFERENCE - inoculated vial at t=0, averages 10 reads",
+            "busy": "Collecting reference (10 readings)... keep the vial still",
+            "done": "✓ Reference collected - press again to redo",
+        },
+    }
 
-    def reference_collection():
-        steps = current_calibration()
-        if steps is None:
+    
+    CAL_TIMEOUT = 20  # seconds to wait for the Arduino to confirm
+    # (reactor_index, step) -> (count when pressed, time pressed)
+    pending_cal = {}
+    # (reactor_index, step) pairs whose last attempt timed out
+    failed_cal = set()
+
+    def cal_button(step):
+        return {"dark": dark_od_button,
+                "blank": blank_od_button,
+                "reference": reference_button}[step]
+
+    def previous_steps_done(reactor, step):
+        order = list(CAL_STEPS)
+        return all(reactor.calibration[s] for s in order[:order.index(step)])
+
+    def collect_cal_step(step):
+        reactor_index = get_selected_reactor_index()
+
+        if reactor_index is None:
+            tkinter.messagebox.showwarning(
+                "No Reactor Connected",
+                "Connect a reactor before calibrating."
+            )
+            return    
+        reactor = reactors[reactor_index]
+
+        if not previous_steps_done(reactor, step):
+            tkinter.messagebox.showwarning(
+                "Calibration Order",
+                "Do the calibration steps in order: Dark, then Blank, then Reference.\n"
+                "Each step is subtracted from / divided by the one before it."
+            )
             return
-        print("Starting reference collection")
-        steps["reference"] = True
-        reference_button.config(state="disabled", text="✓ Reference collected")
-        update_calibration_status()
+
+        # redoing an earlier step invalidates the later ones
+        order = list(CAL_STEPS)
+        for later in order[order.index(step):]:
+            reactor.calibration[later] = False
+
+        info = CAL_STEPS[step]
+        failed_cal.discard((reactor_index, step))
+        pending_cal[(reactor_index, step)] = (
+            getattr(reactor, info["count"]),
+            time.time()
+        )
+
+        print(f"Calibration: sending {info['command']}")
+        send_command(reactor_index, action=info["command"])
+
+        if SIMULATION_MODE:
+            # no Arduino to confirm - fake the confirmation
+            setattr(reactor, info["count"], getattr(reactor, info["count"]) + 1)
+            setattr(reactor, info["set"], True)
+
+        refresh_calibration_ui()
+
+    def check_calibration_status():
+        reactor_index = get_selected_reactor_index()
+
+        if reactor_index is None:
+            return
+
+        reactor = reactors[reactor_index]
+
+        for step, info in CAL_STEPS.items():
+            key = (reactor_index, step)
+
+            if key not in pending_cal:
+                continue
+
+            count_when_pressed, pressed_time = pending_cal[key]
+
+            if getattr(reactor, info["count"]) > count_when_pressed:
+                del pending_cal[key]
+                reactor.calibration[step] = True
+                print(f"Calibration: {step} confirmed by Arduino")
+
+            elif time.time() - pressed_time > CAL_TIMEOUT:
+                del pending_cal[key]
+                failed_cal.add(key)
+                print(f"Calibration: no confirmation for {step} - see Arduino messages above")
+
+        refresh_calibration_ui()
 
     def refresh_calibration_ui():
         index = get_selected_reactor_index()
         if index is None:
             return
         reactor = reactors[index]
-        steps = reactor.calibration
 
-        blank_od_button.config(
-            state="normal",
-            text=("✓ Blank collected (plain media) - press again to redo"
-                  if reactor.blank_set else
-                  "Collect OD of blank vial with no vial (nothing in the vial holder)")
-        )
-        vial_od_button.config(
-            state="disabled" if steps["vial"] else "normal",
-            text=("✓ Vial OD collected" if steps["vial"] else
-                  "Collect OD with vial inside bioreactor with nothing in the vial")
-        )
-        reference_button.config(
-            state="disabled" if steps["reference"] else "normal",
-            text="✓ Reference collected" if steps["reference"] else "Reference Collection"
-        )
+        for step in CAL_STEPS:
+            button = cal_button(step)
+            text = CAL_TEXT[step]
+
+            if (index, step) in pending_cal:
+                button.config(state="disabled", text=text["busy"])
+            elif (index, step) in failed_cal:
+                button.config(
+                    state="normal",
+                    text=f"{step.upper()} NOT collected - check the console, then press to retry"
+                )
+            elif reactor.calibration[step]:
+                button.config(state="normal", text=text["done"])
+            elif previous_steps_done(reactor, step):
+                button.config(state="normal", text=text["idle"])
+            else:
+                button.config(state="disabled", text=text["idle"])
+
         update_calibration_status()
 
     def require_calibration():
@@ -652,76 +757,6 @@ def create_dashboard(root):
             notebook.select(setup_tab)
 
         return False
-
-    # blank request waiting for the Arduino to confirm
-    pending_blank = {}
-
-    def collect_blank_od():
-        reactor_index = get_selected_reactor_index()
-
-        if reactor_index is None:
-            tkinter.messagebox.showwarning(
-                "No Reactor Connected",
-                "Connect a reactor before collecting the blank."
-            )
-            return
-
-        print("Collecting blank OD (plain media)")
-
-        pending_blank[reactor_index] = (
-            reactors[reactor_index].blank_count,
-            time.time()
-        )
-
-        send_command(reactor_index, action="Blank")
-
-        blank_od_button.config(
-            state="disabled",
-            text="Collecting blank... keep the vial still"
-        )
-
-    def check_blank_status():
-        reactor_index = get_selected_reactor_index()
-
-        if reactor_index is None:
-            return
-
-        reactor = reactors[reactor_index]
-
-        if reactor_index in pending_blank:
-            count_when_pressed, pressed_time = pending_blank[reactor_index]
-
-            if reactor.blank_count > count_when_pressed:
-                del pending_blank[reactor_index]
-                print("Blank confirmed by Arduino")
-
-            elif time.time() - pressed_time > 20:
-                # no confirmation - the Arduino prints why
-                del pending_blank[reactor_index]
-                blank_od_button.config(
-                    state="normal",
-                    text="Blank NOT collected - check the console, then press to retry"
-                )
-                return
-
-            else:
-                blank_od_button.config(
-                    state="disabled",
-                    text="Collecting blank... keep the vial still"
-                )
-                return
-
-        if reactor.blank_set and not reactor.calibration["blank"]:
-            reactor.calibration["blank"] = True
-            update_calibration_status()
-
-        if reactor.blank_set:
-            blank_od_button.config(
-                state="normal",
-                text="✓ Blank collected (plain media) - press again to redo"
-            )
-        else:
-            blank_od_button.config(state="normal")
 
     header = tk.Frame(
         dashboard_tab,
@@ -1856,7 +1891,7 @@ def create_dashboard(root):
 
             check_temperature_warning(reactor)
 
-        check_blank_status()
+        check_calibration_status()
 
         # only redraw the graph on the tab being looked at
         current_tab = notebook.select()
@@ -1948,51 +1983,39 @@ def create_dashboard(root):
     )
     initial_setup_frame.pack(fill="both", expand=True)
 
-    # collect blank OD
+  # calibration buttons - one per Arduino step, in order
 
-    def collect_blank_od_setup():
-        collect_blank_od()
+    tk.Label(
+        initial_setup_frame,
+        text=("Run the steps in order. Each one waits for the Arduino to confirm.\n"
+              "Dark = sensor offset with LED off.  Blank = vial of plain media (OD 0).  "
+              "Reference = inoculated vial at the start of the run."),
+        bg=colors["card"],
+        fg=colors["dark_grey"],
+        font=("Arial", 10),
+        justify="left"
+    ).pack(anchor="w", pady=(0, 8))
+
+    dark_od_button = ttk.Button(
+        initial_setup_frame,
+        text=CAL_TEXT["dark"]["idle"],
+        command=lambda: collect_cal_step("dark")
+    )
+    dark_od_button.pack(fill="x", pady=8)
 
     blank_od_button = ttk.Button(
         initial_setup_frame,
-        text="Collect OD of blank vial with no vial (nothing in the vial holder)",
-        command=collect_blank_od_setup
+        text=CAL_TEXT["blank"]["idle"],
+        command=lambda: collect_cal_step("blank")
     )
-    blank_od_button.pack(
-        fill="x",
-        pady=8
-    )
-
-    # collect OD with vial
-
-    def collect_vial_od_setup():
-        collect_vial_od()
-
-    vial_od_button = ttk.Button(
-        initial_setup_frame,
-        text="Collect OD with vial inside bioreactor with nothing in the vial",
-        command=collect_vial_od_setup
-    )
-    vial_od_button.pack(
-        fill="x",
-        pady=8
-    )
-
-    # reference collection
-
-    def reference_collection_setup():
-        reference_collection()
+    blank_od_button.pack(fill="x", pady=8)
 
     reference_button = ttk.Button(
         initial_setup_frame,
-        text="Reference Collection",
-        command=reference_collection_setup
+        text=CAL_TEXT["reference"]["idle"],
+        command=lambda: collect_cal_step("reference")
     )
-    reference_button.pack(
-        fill="x",
-        pady=8
-    )
-
+    reference_button.pack(fill="x", pady=8)
     calibration_status = tk.Label(
         initial_setup_frame,
         text="OD Calibration: 0/3 complete",
