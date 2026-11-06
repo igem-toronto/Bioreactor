@@ -585,7 +585,7 @@ def create_dashboard(root):
 
     temperature_commands = {}
 
-    def calibration_warning(parent): 
+    def calibration_warning(parent):
         answer = tkinter.messagebox.askyesno(
             "OD Calibration Required",
             "OD calibration is not complete.\n\nGo to the calibration tab now?",
