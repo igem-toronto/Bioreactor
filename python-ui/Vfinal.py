@@ -231,6 +231,12 @@ def parse_data(reactor_number, line):
 
         if "Blank Count" in data:
             reactor.blank_count = int(data["Blank Count"])
+            
+        if "Reference Set" in data:
+            reactor.reference_set = bool(data["Reference Set"])
+
+        if "Reference Count" in data:
+            reactor.reference_count = int(data["Reference Count"])
 
         if "pH" in data:
             reactor.ph = float(data["pH"])
@@ -579,7 +585,7 @@ def create_dashboard(root):
 
     temperature_commands = {}
 
-   def calibration_warning(parent):
+    def calibration_warning(parent): 
         answer = tkinter.messagebox.askyesno(
             "OD Calibration Required",
             "OD calibration is not complete.\n\nGo to the calibration tab now?",
